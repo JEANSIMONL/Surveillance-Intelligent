@@ -3,76 +3,88 @@ import cv2
 from ultralytics import YOLO
 from playsound3 import playsound
 import threading
-
+import time
 
 model_feu = YOLO('/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/feu.pt')
-alert_feu = '/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/feu.mp3'
- 
-model_smoke = YOLO('/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/smoke.pt')
-alert_smoke = '/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/smoke.mp3'
- 
+sound_feu = '/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/feu.mp3'
+
+model_fumee = YOLO('/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/smoke.pt')
+sound_fumee = '/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/smoke.mp3'
+
 model_accident = YOLO('/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/accident.pt')
-alert_accident = '/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/accident.mp3'
-
-
+sound_accident = '/home/wecode-071/Surveillance-Intelligent/projet_predictions_model/accident.mp3'
 
 st.title("🛑 Système de Surveillance Intelligent")
-st.write("Choisissez le mode de détection souhaité, puis activez la caméra.")
+st.write("Choisis un mode de détection et lance la caméra.")
 
-mode = st.radio("🎯 Mode de surveillance", ["🔥 Feu + Fumée", "💥 Accident"])
+mode = st.radio("🎯 Mode :", ["🔥 Feu + Fumée", "💥 Accident"])
 
-if "camera_on" not in st.session_state:
+st.sidebar.title("🔧 Réglages image")
+luminosite = st.sidebar.slider("Luminosité", 0, 100, 50)
+contraste = st.sidebar.slider("Contraste", 0, 100, 50)
 
-    st.session_state["camera_on"] = False
-    
-if st.button("📷 Activer/Désactiver la caméra"):
-    st.session_state["camera_on"] = not st.session_state["camera_on"]
+if "cam_active" not in st.session_state:
+    st.session_state.cam_active = False
 
-st.write("📡 Caméra :", "✅ Active" if st.session_state["camera_on"] else "❌ Désactivée")
-    
-if st.session_state["camera_on"]:
+if st.button("📷 Activer / Désactiver la Caméra"):
+    st.session_state.cam_active = not st.session_state.cam_active
+
+st.write("📡 Caméra :", "✅ Active" if st.session_state.cam_active else "❌ Off")
+
+dernier_son = {
+    "feu": 0,
+    "fumee": 0,
+    "accident": 0
+}
+pause_son = 5 
+
+if st.session_state.cam_active:
     cap = cv2.VideoCapture(0)
-    stframe = st.empty()
-    
+    vue = st.empty()
+
     while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
-            st.error("Erreur : impossible d'accéder à la caméra.")
+        ok, image = cap.read()
+        if not ok:
+            st.error("❌ Caméra non détectée.")
             break
-        
+
+        alpha = contraste / 50  
+        beta = luminosite - 50  
+        image = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+
+        maintenant = time.time()
+
+        # Mode Feu + Fumée
         if mode == "🔥 Feu + Fumée":
-            
-            # Détection de feu
-            results_feu = model_feu(frame, conf =0.8 )
-            for result in results_feu:
-                if result.boxes:
+            feu = model_feu(image, conf=0.8)
+            for result in feu:
+                if result.boxes and maintenant - dernier_son["feu"] > pause_son:
                     st.warning("🔥 Feu détecté !")
-                    threading.Thread(target=playsound, args=(alert_feu,), daemon=True).start()
+                    threading.Thread(target=playsound, args=(sound_feu,), daemon=True).start()
+                    dernier_son["feu"] = maintenant
                     break
-            # Détection de fumée
-            results_smoke = model_smoke(frame,  conf =0.8 )
-            for result in results_smoke:
-                if result.boxes:
+
+            fumee = model_fumee(image, conf=0.8)
+            for result in fumee:
+                if result.boxes and maintenant - dernier_son["fumee"] > pause_son:
                     st.warning("💨 Fumée détectée !")
-                    threading.Thread(target=playsound, args=(alert_smoke,), daemon=True).start()
+                    threading.Thread(target=playsound, args=(sound_fumee,), daemon=True).start()
+                    dernier_son["fumee"] = maintenant
                     break
 
+        # Mode Accident
         elif mode == "💥 Accident":
-            
-            # Détection d'accident
-            results_accident = model_accident(frame,  conf = 0.9 )
-            for result in results_accident:
-                if result.boxes:
+            accident = model_accident(image, conf=0.85)
+            for result in accident:
+                if result.boxes and maintenant - dernier_son["accident"] > pause_son:
                     st.warning("💥 Accident détecté !")
-                    threading.Thread(target=playsound, args=(alert_accident,), daemon=True).start()
+                    threading.Thread(target=playsound, args=(sound_accident,), daemon=True).start()
+                    dernier_son["accident"] = maintenant
                     break
 
-        stframe.image(frame, channels="BGR", use_container_width=True)
- 
-
-
- 
+        vue.image(image, channels="BGR", use_container_width=True)
 
     cap.release()
+
 else:
-    st.info("🎥 La caméra est désactivée. Cliquez sur le bouton ci-dessus pour la lancer.")
+    st.info("🎥 Caméra désactivée. Clique sur le bouton pour la lancer.")
