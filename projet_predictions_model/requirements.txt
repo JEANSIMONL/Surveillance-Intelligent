@@ -1,6 +1,5 @@
 numpy
 opencv-python-headless
-opencv-python
 ultralytics
 playsound3
 streamlit
